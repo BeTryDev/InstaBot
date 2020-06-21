@@ -5,6 +5,7 @@ import com.pengrad.telegrambot.UpdatesListener;
 import com.pengrad.telegrambot.request.GetFile;
 import com.pengrad.telegrambot.request.SendMessage;
 import com.pengrad.telegrambot.response.GetFileResponse;
+import ru.betry.database.DatabaseConnector;
 import ru.betry.entity.Post;
 import ru.betry.entity.User;
 
@@ -20,7 +21,7 @@ public class App {
 
 	public static void main(String[] args) throws IOException {
 
-		EntityManagerFactory entityManagerFactory = Persistence.createEntityManagerFactory("instabot");
+		DatabaseConnector connector = new DatabaseConnector("instabot");
 
 		// выгрузка настроек
 		Properties properties = new Properties();
@@ -32,20 +33,20 @@ public class App {
 
 			updates.forEach(update -> {
 				Integer userId = update.message().from().id();
-				EntityManager manager = entityManagerFactory.createEntityManager();
-				manager.getTransaction().begin();
-				User user = manager.find(User.class, userId);
+				connector.startTransaction();
+				User user = connector.getUserService().findById(userId);
 				if (user == null) { // проверка наличия пользователя в MongoDB>
 					bot.execute(new SendMessage(update.message().chat().id(),
 							"Вам необходимо прислать логин и пароль в одном предложении через пробел"));
-					manager.persist(new User(update.message().from().id(), null, null));
+					connector.getUserService().save(new User(update.message().from().id(), null, null));
 				} else if (user.getLogin() == null) { // запись логина и пароля
 
 					String[] loginAndPassword = update.message().text().split(" ");
 					user.setLogin(loginAndPassword[0]);
 					user.setPassword(loginAndPassword[1]);
 
-					manager.persist(user);
+					connector.getUserService().save(user);
+
 
 					bot.execute(new SendMessage(update.message().chat().id(),
 							"Все работает! Теперь вы можете присылать нам текст/изображение для " +
@@ -65,12 +66,11 @@ public class App {
 					post.setPhoto(new File("./images/" + update.message().photo()[0].fileId() + ".jpg").getPath());
 					user.addPost(post);
 
-					manager.persist(post);
-					manager.persist(user);
+					connector.getPostService().save(post);
+					connector.getUserService().save(user);
 				}
 
-				manager.getTransaction().commit();
-				manager.close();
+				connector.endTransaction();
 			});
 
 			return UpdatesListener.CONFIRMED_UPDATES_ALL;
