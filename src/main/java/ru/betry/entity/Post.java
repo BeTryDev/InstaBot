@@ -3,6 +3,7 @@ package ru.betry.entity;
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
+import java.util.Date;
 
 @Entity
 public class Post {
@@ -13,6 +14,7 @@ public class Post {
 
     private String title;
     private String photo;
+    private Date date;
 
     public Post(){}
 
@@ -38,5 +40,13 @@ public class Post {
 
     public void setId(Integer id) {
         this.id = id;
+    }
+
+    public Date getDate() {
+        return date;
+    }
+
+    public void setDate(Date date) {
+        this.date = date;
     }
 }

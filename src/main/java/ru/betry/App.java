@@ -5,23 +5,30 @@ import com.pengrad.telegrambot.UpdatesListener;
 import com.pengrad.telegrambot.request.GetFile;
 import com.pengrad.telegrambot.request.SendMessage;
 import com.pengrad.telegrambot.response.GetFileResponse;
+import org.brunocvcunha.instagram4j.Instagram4j;
+import org.brunocvcunha.instagram4j.requests.InstagramUploadPhotoRequest;
 import ru.betry.database.DatabaseConnector;
 import ru.betry.entity.Post;
 import ru.betry.entity.User;
 
-import javax.persistence.EntityManager;
-import javax.persistence.EntityManagerFactory;
-import javax.persistence.Persistence;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Properties;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class App {
 
 	public static void main(String[] args) throws IOException {
 
 		DatabaseConnector connector = new DatabaseConnector("instabot");
+
+		ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(5);
 
 		// выгрузка настроек
 		Properties properties = new Properties();
@@ -49,8 +56,8 @@ public class App {
 
 
 					bot.execute(new SendMessage(update.message().chat().id(),
-							"Все работает! Теперь вы можете присылать нам текст/изображение для " +
-									"Instagram (в одном сообщении)"));
+							"Все работает! Теперь вы можете присылать нам текст, изображение и дату публикации" +
+									"(формат: чч:мм дд.ММ.гггг, в начале сообщения) для Instagram (в одном сообщении)"));
 				} else if (user.getLogin() != null && update.message().photo().length > 0){
 
 					GetFileResponse fileResponse = bot.execute(new GetFile(update.message().photo()[0].fileId()));
@@ -61,8 +68,41 @@ public class App {
 						System.err.println(e.getMessage());
 					}
 
+					SimpleDateFormat parser = new SimpleDateFormat("hh:mm dd.MM.yyyy");
+					Date datePost = null;
+					try {
+						 datePost = parser.parse(update.message().caption().split("\n")[0]);
+					} catch (ParseException e) {
+						System.err.println(e.getMessage());
+					}
+
+					Runnable sendToInstagram = () -> {
+						Instagram4j instagram4j = Instagram4j.builder()
+								.username(user.getLogin())
+								.password(user.getPassword())
+								.build();
+						instagram4j.setup();
+						try {
+							instagram4j.login();
+							instagram4j.sendRequest(new InstagramUploadPhotoRequest(
+									new File("./images/" + update.message().photo()[0].fileId() + ".jpg"),
+									update.message().caption().replace(
+											update.message().caption().split("\n")[0] + "\n",
+											"")));
+						} catch (IOException e) {
+							System.err.println("Instagram error: " + e.getMessage());
+						}
+					};
+
+					System.out.println(datePost.getTime() - System.currentTimeMillis() + "");
+					scheduler.schedule(sendToInstagram, datePost.getTime() - System.currentTimeMillis(),
+							TimeUnit.MILLISECONDS);
+
 					Post post = new Post();
-					post.setTitle(update.message().caption());
+					post.setDate(datePost);
+					post.setTitle(update.message().caption().replace(
+							update.message().caption().split("\n")[0] + "\n",
+							""));
 					post.setPhoto(new File("./images/" + update.message().photo()[0].fileId() + ".jpg").getPath());
 					user.addPost(post);
 
