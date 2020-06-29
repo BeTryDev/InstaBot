@@ -2,6 +2,7 @@ package ru.betry;
 
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.UpdatesListener;
+import com.pengrad.telegrambot.model.Update;
 import com.pengrad.telegrambot.request.GetFile;
 import com.pengrad.telegrambot.request.SendMessage;
 import com.pengrad.telegrambot.response.GetFileResponse;
@@ -38,72 +39,13 @@ public class BetryBot {
                 Integer userId = update.message().from().id();
                 connector.startTransaction();
                 User user = connector.getUserService().findById(userId);
+
                 if (user == null) { // проверка наличия пользователя в MongoDB>
-                    bot.execute(new SendMessage(update.message().chat().id(),
-                            "Вам необходимо прислать логин и пароль в одном предложении через пробел"));
-                    connector.getUserService().save(new User(update.message().from().id(), null, null));
+                    processNewUser(update);
                 } else if (user.getLogin() == null) { // запись логина и пароля
-
-                    String[] loginAndPassword = update.message().text().split(" ");
-                    user.setLogin(loginAndPassword[0]);
-                    user.setPassword(loginAndPassword[1]);
-
-                    connector.getUserService().save(user);
-
-
-                    bot.execute(new SendMessage(update.message().chat().id(),
-                            "Все работает! Теперь вы можете присылать нам текст, изображение и дату публикации" +
-                                    "(формат: чч:мм дд.ММ.гггг, в начале сообщения) для Instagram (в одном сообщении)"));
+                    processLoginAndPassword(update, user);
                 } else if (user.getLogin() != null && update.message().photo().length > 0) {
-
-                    GetFileResponse fileResponse = bot.execute(new GetFile(update.message().photo()[0].fileId()));
-                    String fullPath = bot.getFullFilePath(fileResponse.file());
-                    try {
-                        HttpDownload.downloadFile(fullPath, "./images", update.message().photo()[0].fileId() + ".jpg");
-                    } catch (IOException e) {
-                        System.err.println(e.getMessage());
-                    }
-
-                    SimpleDateFormat parser = new SimpleDateFormat("hh:mm dd.MM.yyyy");
-                    Date datePost = null;
-                    try {
-                        datePost = parser.parse(update.message().caption().split("\n")[0]);
-                    } catch (ParseException e) {
-                        System.err.println(e.getMessage());
-                    }
-
-                    Runnable sendToInstagram = () -> {
-                        Instagram4j instagram4j = Instagram4j.builder()
-                                .username(user.getLogin())
-                                .password(user.getPassword())
-                                .build();
-                        instagram4j.setup();
-                        try {
-                            instagram4j.login();
-                            instagram4j.sendRequest(new InstagramUploadPhotoRequest(
-                                    new File("./images/" + update.message().photo()[0].fileId() + ".jpg"),
-                                    update.message().caption().replace(
-                                            update.message().caption().split("\n")[0] + "\n",
-                                            "")));
-                        } catch (IOException e) {
-                            System.err.println("Instagram error: " + e.getMessage());
-                        }
-                    };
-
-                    System.out.println(datePost.getTime() - System.currentTimeMillis() + "");
-                    scheduler.schedule(sendToInstagram, datePost.getTime() - System.currentTimeMillis(),
-                            TimeUnit.MILLISECONDS);
-
-                    Post post = new Post();
-                    post.setDate(datePost);
-                    post.setTitle(update.message().caption().replace(
-                            update.message().caption().split("\n")[0] + "\n",
-                            ""));
-                    post.setPhoto(new File("./images/" + update.message().photo()[0].fileId() + ".jpg").getPath());
-                    user.addPost(post);
-
-                    connector.getPostService().save(post);
-                    connector.getUserService().save(user);
+                    processNewInstagramPost(update, user);
                 }
 
                 connector.endTransaction();
@@ -111,5 +53,75 @@ public class BetryBot {
 
             return UpdatesListener.CONFIRMED_UPDATES_ALL;
         });
+    }
+
+    private void processNewUser(Update update) {
+        bot.execute(new SendMessage(update.message().chat().id(),
+                "Вам необходимо прислать логин и пароль в одном предложении через пробел"));
+        connector.getUserService().save(new User(update.message().from().id(), null, null));
+    }
+
+    private void processLoginAndPassword(Update update, User user) {
+        String[] loginAndPassword = update.message().text().split(" ");
+        user.setLogin(loginAndPassword[0]);
+        user.setPassword(loginAndPassword[1]);
+
+        connector.getUserService().save(user);
+
+
+        bot.execute(new SendMessage(update.message().chat().id(),
+                "Все работает! Теперь вы можете присылать нам текст, изображение и дату публикации" +
+                        "(формат: чч:мм дд.ММ.гггг, в начале сообщения) для Instagram (в одном сообщении)"));
+    }
+
+    private void processNewInstagramPost(Update update, User user) {
+        GetFileResponse fileResponse = bot.execute(new GetFile(update.message().photo()[0].fileId()));
+        String fullPath = bot.getFullFilePath(fileResponse.file());
+        try {
+            HttpDownload.downloadFile(fullPath, "./images", update.message().photo()[0].fileId() + ".jpg");
+        } catch (IOException e) {
+            System.err.println(e.getMessage());
+        }
+
+        SimpleDateFormat parser = new SimpleDateFormat("hh:mm dd.MM.yyyy");
+        Date datePost = null;
+        try {
+            datePost = parser.parse(update.message().caption().split("\n")[0]);
+        } catch (ParseException e) {
+            System.err.println(e.getMessage());
+        }
+
+        Runnable sendToInstagram = () -> {
+            Instagram4j instagram4j = Instagram4j.builder()
+                    .username(user.getLogin())
+                    .password(user.getPassword())
+                    .build();
+            instagram4j.setup();
+            try {
+                instagram4j.login();
+                instagram4j.sendRequest(new InstagramUploadPhotoRequest(
+                        new File("./images/" + update.message().photo()[0].fileId() + ".jpg"),
+                        update.message().caption().replace(
+                                update.message().caption().split("\n")[0] + "\n",
+                                "")));
+            } catch (IOException e) {
+                System.err.println("Instagram error: " + e.getMessage());
+            }
+        };
+
+        System.out.println(datePost.getTime() - System.currentTimeMillis() + "");
+        scheduler.schedule(sendToInstagram, datePost.getTime() - System.currentTimeMillis(),
+                TimeUnit.MILLISECONDS);
+
+        Post post = new Post();
+        post.setDate(datePost);
+        post.setTitle(update.message().caption().replace(
+                update.message().caption().split("\n")[0] + "\n",
+                ""));
+        post.setPhoto(new File("./images/" + update.message().photo()[0].fileId() + ".jpg").getPath());
+        user.addPost(post);
+
+        connector.getPostService().save(post);
+        connector.getUserService().save(user);
     }
 }
