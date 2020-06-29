@@ -10,12 +10,13 @@ public class App {
         Properties properties = new Properties();
         properties.load(new FileInputStream("app.properties"));
         String telegramToken = properties.getProperty("telegram_token");
+        String persistenceName = properties.getProperty("persistence_name");
         BetryBot betryBot;
 
-        if (telegramToken != null) {
-            betryBot = new BetryBot(telegramToken, "instabot");
+        if (telegramToken != null && persistenceName != null) {
+            betryBot = new BetryBot(telegramToken, persistenceName);
         } else {
-            throw new RuntimeException("Telegram token is required");
+            throw new RuntimeException("Telegram token and database persistence unit name are required");
         }
 
         betryBot.listenUpdates();
