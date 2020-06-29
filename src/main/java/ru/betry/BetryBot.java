@@ -44,8 +44,13 @@ public class BetryBot {
                     processNewUser(update);
                 } else if (user.getLogin() == null) { // запись логина и пароля
                     processLoginAndPassword(update, user);
-                } else if (user.getLogin() != null && update.message().photo().length > 0) {
-                    processNewInstagramPost(update, user);
+                } else if (user.getLogin() != null && update.message().photo() != null) {
+                    if (update.message().photo().length == 1) {
+                        processNewInstagramPost(update, user);
+                    } else {
+                        bot.execute(new SendMessage(update.message().chat().id(),
+                                "Пока что я умею работать только с одним изображением!"));
+                    }
                 }
 
                 connector.endTransaction();
